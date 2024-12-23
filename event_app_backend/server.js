@@ -7,6 +7,7 @@ import attendeeRoutes from './routes/attendeeRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import connectDB from './config/db.js';
+import taskAssignedRoutes from "./routes/taskAssignedRoutes.js"
 
 dotenv.config();
 
@@ -21,7 +22,7 @@ app.use('/api/tasks', taskRoutes);
 app.use('/api/attendees', attendeeRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
-
+app.use('/api/taskAssigned', taskAssignedRoutes);
 app.use((req, res, next) => {
  const error = new Error('Not Found');
  error.status = 404;

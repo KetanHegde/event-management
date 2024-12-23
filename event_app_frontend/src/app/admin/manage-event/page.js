@@ -1,4 +1,5 @@
 "use client";
+
 import { useState, useEffect } from "react";
 
 const EventManagementPage = () => {
@@ -7,17 +8,16 @@ const EventManagementPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [editingEvent, setEditingEvent] = useState(null);
-  const [selectedAttendeeIds, setSelectedAttendeeIds] = useState([]); // Store selected attendee IDs
   const [searchTerm, setSearchTerm] = useState("");
-  
-  // Fetching events
+  const [selectedAttendees, setSelectedAttendees] = useState([]); 
+  const [usersList, setUsersList] = useState([]);
+
+  // Fetching functions remain the same
   const fetchEvents = async () => {
     try {
       setLoading(true);
       const eventResponse = await fetch("http://localhost:5000/api/events");
-      if (!eventResponse.ok) {
-        throw new Error("Failed to fetch events");
-      }
+      if (!eventResponse.ok) throw new Error("Failed to fetch events");
       const eventData = await eventResponse.json();
       setEvents(Array.isArray(eventData) ? eventData : []);
     } catch (err) {
@@ -27,13 +27,10 @@ const EventManagementPage = () => {
     }
   };
 
-  // Fetch attendees for a specific event
   const fetchAttendeesForEvent = async (eventId) => {
     try {
       const attendeeResponse = await fetch(`http://localhost:5000/api/attendees/event/${eventId}`);
-      if (!attendeeResponse.ok) {
-        throw new Error("Failed to fetch attendees");
-      }
+      if (!attendeeResponse.ok) throw new Error("Failed to fetch attendees");
       const attendeeData = await attendeeResponse.json();
       setAttendees(attendeeData);
     } catch (err) {
@@ -41,35 +38,43 @@ const EventManagementPage = () => {
     }
   };
 
-  // Add selected attendees to the event
+  const fetchUsers = async (eventId) => {
+    try {
+      const response = await fetch("http://localhost:5000/api/users?role=Attendee");
+      const data = await response.json();
+      const eventAttendeesResponse = await fetch(`http://localhost:5000/api/attendees/event/${eventId}`);
+      const eventAttendeesData = await eventAttendeesResponse.json();
+      const eventAttendeesIds = eventAttendeesData.map(attendee => attendee._id);
+      const availableUsers = data.users.filter(user => !eventAttendeesIds.includes(user._id));
+      setUsersList(availableUsers);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+    }
+  };
+
   const addAttendees = async (eventId) => {
-    if (selectedAttendeeIds.length === 0) {
+    if (selectedAttendees.length === 0) {
       alert("Please select at least one attendee.");
       return;
     }
     try {
-      const response = await fetch(`/api/attendees/${eventId}`, {
+      const response = await fetch(`http://localhost:5000/api/attendees/${eventId}`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ attendeeIds: selectedAttendeeIds }), // Sending multiple IDs
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attendeeIds: selectedAttendees }),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to add attendees");
-      }
+      if (!response.ok) throw new Error("Failed to add attendees");
 
-      const data = await response.json();
-      alert(data.message);
-      fetchAttendeesForEvent(eventId); // Refresh attendees list
-      setSelectedAttendeeIds([]); // Reset selected attendee IDs
+      await response.json();
+      fetchAttendeesForEvent(eventId);
+      setSelectedAttendees([]);
+      alert("Attendees added successfully!");
     } catch (err) {
       alert("Error adding attendees: " + err.message);
     }
   };
 
-  // Delete event
   const deleteEvent = async (eventId) => {
     try {
       await fetch(`http://localhost:5000/api/events/${eventId}`, {
@@ -81,60 +86,72 @@ const EventManagementPage = () => {
     }
   };
 
-  // Delete attendee from an event
   const deleteAttendee = async (eventId, attendeeId) => {
     try {
       await fetch(`http://localhost:5000/api/attendees/${eventId}/${attendeeId}`, {
         method: 'DELETE'
       });
-      fetchAttendeesForEvent(eventId); // Refresh attendees list
+      fetchAttendeesForEvent(eventId);
     } catch (err) {
       alert("Error deleting attendee: " + err.message);
     }
   };
 
-  // Filter attendees by search term (email or username)
-  const filteredAttendees = attendees.filter(attendee =>
-    (attendee.email?.toLowerCase().includes(searchTerm.toLowerCase()) || "") ||
-    (attendee.username?.toLowerCase().includes(searchTerm.toLowerCase()) || "")
-  );
+  const toggleAttendee = (userId) => {
+    setSelectedAttendees(prev => 
+      prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
+  const toggleAllAttendees = () => {
+    const filteredUsers = usersList.filter(user => 
+      user.email?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      user.username?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    
+    if (selectedAttendees.length === filteredUsers.length) {
+      setSelectedAttendees([]);
+    } else {
+      setSelectedAttendees(filteredUsers.map(user => user._id));
+    }
+  };
 
   useEffect(() => {
     fetchEvents();
   }, []);
 
-  // Handle checkbox change (for selecting attendees)
-  const handleSelectAttendee = (attendeeId, isSelected) => {
-    setSelectedAttendeeIds(prevIds =>
-      isSelected ? [...prevIds, attendeeId] : prevIds.filter(id => id !== attendeeId)
-    );
-  };
+  useEffect(() => {
+    if (editingEvent) {
+      fetchUsers(editingEvent._id);
+      fetchAttendeesForEvent(editingEvent._id);
+    }
+  }, [editingEvent]);
 
-  if (loading) {
-    return (
-      <div className="container text-center mt-5">
-        <div className="spinner-border" role="status">
-          <span className="visually-hidden">Loading...</span>
-        </div>
-      </div>
-    );
-  }
+  const filteredAttendees = attendees.filter(attendee => 
+    (attendee.email?.toLowerCase().includes(searchTerm.toLowerCase()) || "") ||
+    (attendee.username?.toLowerCase().includes(searchTerm.toLowerCase()) || "")
+  );
 
-  if (error) {
-    return (
-      <div className="container mt-5">
-        <div className="alert alert-danger" role="alert">
-          {error}
-        </div>
+  if (loading) return (
+    <div className="container text-center mt-5">
+      <div className="spinner-border" role="status">
+        <span className="visually-hidden">Loading...</span>
       </div>
-    );
-  }
+    </div>
+  );
+
+  if (error) return (
+    <div className="container mt-5">
+      <div className="alert alert-danger" role="alert">{error}</div>
+    </div>
+  );
 
   return (
     <div className="container mt-5">
       <h1 className="mb-4 text-center">Event and Attendee Management</h1>
 
-      {/* Event Table */}
       <h3>Events</h3>
       <table className="table table-striped table-hover">
         <thead className="table-dark sticky-top">
@@ -158,10 +175,7 @@ const EventManagementPage = () => {
                 </button>
                 <button
                   className="btn btn-secondary btn-sm"
-                  onClick={() => {
-                    setEditingEvent(event);
-                    fetchAttendeesForEvent(event._id); // Fetch attendees for the selected event
-                  }}
+                  onClick={() => setEditingEvent(event)}
                 >
                   View Attendees
                 </button>
@@ -171,7 +185,6 @@ const EventManagementPage = () => {
         </tbody>
       </table>
 
-      {/* Attendees Section (Visible after selecting an event) */}
       {editingEvent && (
         <div>
           <h3>Attendees for {editingEvent.name}</h3>
@@ -184,32 +197,84 @@ const EventManagementPage = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-
-          {/* Add attendees to event */}
-          <button
-            className="btn btn-primary mb-3"
-            onClick={() => addAttendees(editingEvent._id)}
-          >
-            Add Selected Attendees
-          </button>
-
-          {/* Attendees Table */}
-          <div className="border p-2 rounded" style={{ maxHeight: "200px", overflowY: "auto" }}>
-            {filteredAttendees.map((attendee) => (
-              <div key={attendee._id} className="form-check">
-                <input
-                  type="checkbox"
-                  className="form-check-input"
-                  id={attendee._id}
-                  checked={selectedAttendeeIds.includes(attendee._id)}
-                  onChange={(e) => handleSelectAttendee(attendee._id, e.target.checked)}
-                />
-                <label className="form-check-label" htmlFor={attendee._id}>
-                  {attendee.username} ({attendee.email})
-                </label>
-              </div>
-            ))}
+          <div>
+            <div className="mb-2">
+              <button
+                className="btn btn-secondary mb-2"
+                onClick={toggleAllAttendees}
+              >
+                {selectedAttendees.length === usersList.filter(user => 
+                  user.email?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                  user.username?.toLowerCase().includes(searchTerm.toLowerCase())
+                ).length ? 'Deselect All' : 'Select All'}
+              </button>
+            </div>
+            <div
+              className="border p-2 rounded mb-3"
+              style={{ maxHeight: "200px", overflowY: "auto" }}
+            >
+              {usersList
+                .filter(user => 
+                  user.email?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                  user.username?.toLowerCase().includes(searchTerm.toLowerCase())
+                )
+                .map((user) => (
+                  <div key={user._id} className="form-check">
+                    <input
+                      type="checkbox"
+                      className="form-check-input"
+                      id={user._id}
+                      checked={selectedAttendees.includes(user._id)}
+                      onChange={() => toggleAttendee(user._id)}
+                    />
+                    <label className="form-check-label" htmlFor={user._id}>
+                      {user.username} ({user.email})
+                    </label>
+                  </div>
+                ))}
+            </div>
+            <button
+              className="btn btn-primary mb-3"
+              onClick={() => addAttendees(editingEvent._id)}
+              disabled={selectedAttendees.length === 0}
+            >
+              Add Selected Attendees
+            </button>
           </div>
+
+          <table className="table table-striped table-hover">
+            <thead className="table-dark sticky-top">
+              <tr>
+                <th>Email</th>
+                <th>Username</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredAttendees.length > 0 ? (
+                filteredAttendees.map((attendee) => (
+                  <tr key={attendee._id}>
+                    <td>{attendee.email}</td>
+                    <td>{attendee.username}</td>
+                    <td>
+                      <button
+                        className="btn btn-dark btn-sm me-2"
+                        onClick={() => deleteAttendee(editingEvent._id, attendee._id)}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="3" className="text-center">
+                    No attendees found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
